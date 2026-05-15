@@ -1,0 +1,14 @@
+[
+  {
+    "crop": "silage_maize",
+    "date": "2026-04",
+    "file": "silage_maize_2026-04.geojson",
+    "state_file": "silage_maize_2026-04_state.geojson"
+  },
+  {
+    "crop": "winter_wheat",
+    "date": "2026-04",
+    "file": "winter_wheat_2026-04.geojson",
+    "state_file": "winter_wheat_2026-04_state.geojson"
+  }
+]
