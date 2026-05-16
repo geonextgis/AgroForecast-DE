@@ -4,6 +4,18 @@ import json
 
 import fiona
 import geopandas as gpd
+import pandas as pd
+
+
+YIELD_CSV = "data/interim/yield/Final_data_2024.csv"
+
+# Forecast crop name -> "var" column code in the yield CSV
+CROP_TO_YIELD_VAR = {
+    "winter_wheat": "ww",
+    "winter_barley": "wb",
+    "silage_maize": "silage_maize",
+    "grain_maize": "grain_maize",
+}
 
 
 def _clean_columns(gdf):
@@ -27,6 +39,71 @@ def _export_layer(gpkg_path, layer, out_path):
     if os.path.exists(out_path):
         os.remove(out_path)
     gdf.to_file(out_path, driver="GeoJSON")
+
+
+def export_observed_yields(crops, output_dir):
+    """Write per-crop observed-yield lookups.
+
+    For each crop, output_dir/observed_{crop}.json maps:
+        {
+          "districts": { "<NUTS3_ID>": {"year": YYYY, "value": <t/ha>}, ... },
+          "states":    { "<NUTS1_ID>": {"year": YYYY, "value": <t/ha>, "n_districts": N}, ... },
+          "latest_year": YYYY
+        }
+
+    Each district's observed entry uses the *most recent year with a non-NA
+    yield for that district*, so coverage is maximized even when the latest
+    global year is missing for some districts. State entries aggregate using
+    the most recent year that has any observed values.
+    """
+    if not os.path.exists(YIELD_CSV):
+        print(f"Yield CSV not found at {YIELD_CSV}; skipping observed-yield export.")
+        return
+
+    df = pd.read_csv(YIELD_CSV)
+    df = df[df["measure"] == "yield"].copy()
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["value", "nuts_id", "year"])
+
+    for crop in crops:
+        var = CROP_TO_YIELD_VAR.get(crop)
+        if not var:
+            continue
+        sub = df[df["var"] == var]
+        if sub.empty:
+            print(f"  no observed-yield rows for {crop} ({var}); skipping")
+            continue
+
+        latest_year = int(sub["year"].max())
+
+        idx = sub.groupby("nuts_id")["year"].idxmax()
+        latest_per_dist = sub.loc[idx, ["nuts_id", "year", "value"]]
+        districts = {
+            row.nuts_id: {"year": int(row.year), "value": round(float(row.value), 3)}
+            for row in latest_per_dist.itertuples(index=False)
+        }
+
+        sub_latest = sub[sub["year"] == latest_year].copy()
+        sub_latest["nuts1"] = sub_latest["nuts_id"].str.slice(0, 3)
+        agg = sub_latest.groupby("nuts1")["value"].agg(["mean", "count"]).reset_index()
+        states = {
+            row.nuts1: {
+                "year": latest_year,
+                "value": round(float(row["mean"]), 3),
+                "n_districts": int(row["count"]),
+            }
+            for _, row in agg.iterrows()
+        }
+
+        out_path = os.path.join(output_dir, f"observed_{crop}.json")
+        with open(out_path, "w") as f:
+            json.dump(
+                {"latest_year": latest_year, "districts": districts, "states": states},
+                f,
+                separators=(",", ":"),
+            )
+        print(f"  observed -> observed_{crop}.json (latest {latest_year}, "
+              f"{len(districts)} districts, {len(states)} states)")
 
 
 def export_forecasts():
@@ -81,6 +158,12 @@ def export_forecasts():
 
     with open(os.path.join(output_dir, "forecast_index.json"), "w") as f:
         json.dump(all_forecasts, f, indent=2)
+
+    crops_seen = sorted({entry["crop"] for entry in all_forecasts})
+    if crops_seen:
+        print("Exporting observed yields…")
+        export_observed_yields(crops_seen, output_dir)
+
     print("Export complete.")
 
 

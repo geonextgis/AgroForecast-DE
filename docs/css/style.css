@@ -86,6 +86,8 @@ h1, h2, h3 { margin: 0; }
     display: flex;
     flex-direction: column;
     height: 100vh;
+    /* Dynamic viewport height avoids the iOS Safari bottom-bar gap. */
+    height: 100dvh;
 }
 
 /* ----- Topbar ----- */
@@ -582,6 +584,33 @@ body.is-resizing iframe, body.is-resizing canvas { pointer-events: none; }
     height: 14px;
     top: -2px;
 }
+.ens-tick.obs {
+    background: var(--accent);
+    height: 16px;
+    top: -3px;
+    width: 3px;
+    border-radius: 1px;
+    box-shadow: 0 0 0 1px var(--bg-elev);
+}
+.ens-bar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.85rem;
+    margin-top: 0.45rem;
+    font-size: 0.66rem;
+    color: var(--text-muted);
+}
+.ens-bar-legend .swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+.ens-bar-legend .swatch-med { background: var(--text); }
+.ens-bar-legend .swatch-hist { background: var(--text-muted); }
+.ens-bar-legend .swatch-obs { background: var(--accent); }
 
 /* ----- Leaflet popup themed ----- */
 .leaflet-popup-content-wrapper {
@@ -641,6 +670,8 @@ body.has-drawer .drawer-backdrop {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
+        /* Make sure content can scroll past the iOS home indicator */
+        padding-bottom: max(1rem, env(safe-area-inset-bottom));
     }
     .col-left {
         left: 0;
@@ -663,19 +694,36 @@ body.has-drawer .drawer-backdrop {
         display: block;
     }
 
-    /* Topbar shrink */
-    .topbar { padding: 0 0.6rem; gap: 0.4rem; }
-    .topbar-actions { gap: 0.35rem; }
-    .brand { gap: 0.5rem; }
-    .brand-mark { width: 32px; height: 32px; }
-    .brand-text h1 { font-size: 0.9rem; }
+    /* Topbar shrink — allow wrapping on the smallest viewports */
+    .topbar {
+        padding: 0 0.6rem;
+        gap: 0.4rem;
+        padding-top: env(safe-area-inset-top);
+    }
+    .topbar-actions { gap: 0.35rem; flex-wrap: nowrap; }
+    .brand { gap: 0.5rem; min-width: 0; flex: 1 1 auto; }
+    .brand-mark { width: 32px; height: 32px; flex-shrink: 0; }
+    .brand-text { min-width: 0; flex: 1 1 auto; }
+    .brand-text h1 {
+        font-size: 0.9rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
     .seg-btn { padding: 0.32rem 0.65rem; font-size: 0.72rem; }
-    .icon-btn { width: 34px; height: 34px; }
+    .icon-btn { width: 34px; height: 34px; flex-shrink: 0; }
 
     /* Map overlays: smaller, repositioned so nothing overlaps */
     .map-overlay-tl { top: 8px; left: 8px; right: 56px; }
     .overlay-meta { padding: 0.3rem 0.4rem; gap: 0.3rem; flex-wrap: wrap; }
-    .overlay-tag { font-size: 0.66rem; padding: 0.15rem 0.45rem; }
+    .overlay-tag {
+        font-size: 0.66rem;
+        padding: 0.15rem 0.45rem;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
     .map-btn { top: 8px; right: 8px; width: 32px; height: 32px; }
     .map-overlay-br { bottom: 16px; right: 8px; left: 8px; }
     .legend {
@@ -688,28 +736,35 @@ body.has-drawer .drawer-backdrop {
     .legend-gradient { height: 10px; margin-bottom: 0.35rem; }
     .legend-ticks { height: 22px; }
     .legend-tick { font-size: 0.62rem; }
+    /* Thin out tick labels so they don't overlap on narrow screens */
+    .legend-tick:nth-child(even) { display: none; }
 
     /* Zoom controls sit above bottom legend; shift up a bit */
-    .leaflet-bottom.leaflet-left { bottom: 86px; }
+    .leaflet-bottom.leaflet-left { bottom: 96px; }
+    /* Attribution gets pushed clear of the legend too */
+    .leaflet-bottom.leaflet-right { bottom: 96px; }
 
     /* Left column padding shrink */
     .col-left { padding: 0.75rem; }
+    .kpi-grid { gap: 0.45rem; }
 
     /* Right column cards more vertical breathing room */
     .col-right { padding: 0.6rem 0.6rem 1rem; }
     .card-head { padding: 0.55rem 0.6rem; }
     .card-body { padding: 0.6rem 0.7rem 0.75rem; }
-    .chart-host { height: 200px; }
-    .chart-host.tall { height: 240px; }
+    .chart-host { height: 220px; }
+    .chart-host.tall { height: 260px; }
 
-    /* Region grid: one column on phones */
+    /* Region grid: two columns on tablets, denser items */
     .region-grid { grid-template-columns: 1fr 1fr; }
     .region-item { padding: 0.45rem 0.55rem; }
     .region-item .value { font-size: 0.92rem; }
+    .region-header h3 { font-size: 0.98rem; }
 
     /* Close drag-handle affordance, since DnD via touch is unreliable */
     .drag-grip { display: none; }
     .card-head { cursor: pointer; }
+    .card[draggable="true"] { /* disable HTML5 drag on touch */ }
 }
 
 /* ----- Very small phones ----- */
@@ -718,11 +773,11 @@ body.has-drawer .drawer-backdrop {
     .seg { padding: 2px; }
     .seg-btn { padding: 0.3rem 0.55rem; font-size: 0.68rem; }
     .icon-btn { width: 32px; height: 32px; }
-    /* Hide the basemap switcher to save space; theme + drawer toggles are higher priority */
-    #basemap-toggle { display: none; }
     .region-grid { grid-template-columns: 1fr; }
     .col-left, .col-right { width: 100vw; max-width: 100vw; }
     .map-overlay-tl { right: 50px; }
+    /* Tighten the inline ensemble legend on the narrowest phones */
+    .ens-bar-legend { gap: 0.35rem 0.55rem; font-size: 0.62rem; }
 }
 
 /* ----- Touch input ergonomics ----- */

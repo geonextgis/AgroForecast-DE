@@ -36,11 +36,15 @@
         ylorrd: ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c', '#bd0026', '#800026'],
     };
 
-    const BASEMAPS = [
-        { name: 'Carto Light', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap, &copy; CARTO' } },
-        { name: 'Carto Voyager', url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', opts: { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap, &copy; CARTO' } },
-        { name: 'Stamen Terrain', url: 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png', opts: { maxZoom: 18, attribution: '&copy; Stadia Maps, Stamen Design, OpenStreetMap' } },
-    ];
+    // Single basemap for visual consistency across the dashboard.
+    const BASEMAP = {
+        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        opts: {
+            subdomains: 'abcd',
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap, &copy; CARTO',
+        },
+    };
 
     const LS_KEY = {
         theme: 'agro-theme',
@@ -62,10 +66,11 @@
         district: null,
         stateData: null,
         pinned: null,
-        basemapIdx: 0,
         theme: 'light',
         charts: {},
         scale: null,
+        observed: null,       // observed-yield lookup for the active crop
+        observedCache: {},    // crop -> observed JSON
     };
 
     /* ---------- Boot ---------- */
@@ -131,8 +136,57 @@
     }
     function updateTogglesState() {
         const ws = document.getElementById('workspace');
-        document.getElementById('toggle-left').classList.toggle('is-active', !ws.classList.contains('no-left'));
-        document.getElementById('toggle-right').classList.toggle('is-active', !ws.classList.contains('no-right'));
+        const left = document.getElementById('col-left');
+        const right = document.getElementById('col-right');
+        if (isMobile()) {
+            document.getElementById('toggle-left').classList.toggle('is-active', left.classList.contains('is-open'));
+            document.getElementById('toggle-right').classList.toggle('is-active', right.classList.contains('is-open'));
+        } else {
+            document.getElementById('toggle-left').classList.toggle('is-active', !ws.classList.contains('no-left'));
+            document.getElementById('toggle-right').classList.toggle('is-active', !ws.classList.contains('no-right'));
+        }
+    }
+    function isMobile() {
+        return window.matchMedia('(max-width: 860px)').matches;
+    }
+    function revealDetailDrawer() {
+        const right = document.getElementById('col-right');
+        const left = document.getElementById('col-left');
+        if (right.classList.contains('is-open')) return;
+        left.classList.remove('is-open');
+        right.classList.add('is-open');
+        document.body.classList.add('has-drawer');
+        updateTogglesState();
+        requestAnimationFrame(resizeAllCharts);
+    }
+    function closeMobileDrawers() {
+        const left = document.getElementById('col-left');
+        const right = document.getElementById('col-right');
+        left.classList.remove('is-open');
+        right.classList.remove('is-open');
+        document.body.classList.remove('has-drawer');
+        updateTogglesState();
+    }
+    function togglePanel(side) {
+        if (isMobile()) {
+            const col = document.getElementById(side === 'left' ? 'col-left' : 'col-right');
+            const other = document.getElementById(side === 'left' ? 'col-right' : 'col-left');
+            // Open one drawer at a time on phones to keep the map usable.
+            other.classList.remove('is-open');
+            col.classList.toggle('is-open');
+            document.body.classList.toggle('has-drawer', col.classList.contains('is-open'));
+            updateTogglesState();
+            // Charts inside a freshly-opened drawer need a resize tick.
+            requestAnimationFrame(resizeAllCharts);
+            return;
+        }
+        const ws = document.getElementById('workspace');
+        const cls = side === 'left' ? 'no-left' : 'no-right';
+        ws.classList.toggle(cls);
+        localStorage.setItem(side === 'left' ? LS_KEY.leftOpen : LS_KEY.rightOpen,
+            ws.classList.contains(cls) ? '0' : '1');
+        updateTogglesState();
+        setTimeout(() => { resizeAllCharts(); mapRef && mapRef.invalidateSize(); }, 50);
     }
 
     function initResize() {
@@ -257,23 +311,14 @@
             .setView([51.2, 10.45], 6);
         // Move zoom controls to bottom-left so they don't overlap the top-left info bar
         L.control.zoom({ position: 'bottomleft' }).addTo(mapRef);
-        applyBasemap();
+        baseLayer = L.tileLayer(BASEMAP.url, BASEMAP.opts).addTo(mapRef);
         return mapRef;
-    }
-    function applyBasemap() {
-        const bm = BASEMAPS[state.basemapIdx];
-        if (baseLayer) mapRef.removeLayer(baseLayer);
-        baseLayer = L.tileLayer(bm.url, bm.opts).addTo(mapRef);
     }
 
     /* ---------- UI bindings ---------- */
 
     function bindUI(map) {
         document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
-        document.getElementById('basemap-toggle').addEventListener('click', () => {
-            state.basemapIdx = (state.basemapIdx + 1) % BASEMAPS.length;
-            applyBasemap();
-        });
         document.getElementById('reset-view').addEventListener('click', () => {
             map.setView([51.2, 10.45], 6);
             state.pinned = null;
@@ -281,21 +326,13 @@
             renderLayer();
         });
 
-        // Panel toggles
-        document.getElementById('toggle-left').addEventListener('click', () => {
-            const ws = document.getElementById('workspace');
-            ws.classList.toggle('no-left');
-            localStorage.setItem(LS_KEY.leftOpen, ws.classList.contains('no-left') ? '0' : '1');
-            updateTogglesState();
-            setTimeout(() => { resizeAllCharts(); mapRef && mapRef.invalidateSize(); }, 50);
-        });
-        document.getElementById('toggle-right').addEventListener('click', () => {
-            const ws = document.getElementById('workspace');
-            ws.classList.toggle('no-right');
-            localStorage.setItem(LS_KEY.rightOpen, ws.classList.contains('no-right') ? '0' : '1');
-            updateTogglesState();
-            setTimeout(() => { resizeAllCharts(); mapRef && mapRef.invalidateSize(); }, 50);
-        });
+        // Panel toggles — desktop hides columns, mobile slides drawers in/out.
+        document.getElementById('toggle-left').addEventListener('click', () => togglePanel('left'));
+        document.getElementById('toggle-right').addEventListener('click', () => togglePanel('right'));
+
+        // Mobile drawer backdrop closes any open drawer.
+        const backdrop = document.getElementById('drawer-backdrop');
+        if (backdrop) backdrop.addEventListener('click', closeMobileDrawers);
 
         // Level toggle
         document.querySelectorAll('.seg-btn[data-level]').forEach((btn) => {
@@ -330,7 +367,13 @@
             if (!e.target.closest('.control')) results.hidden = true;
         });
 
-        window.addEventListener('resize', () => { resizeAllCharts(); mapRef && mapRef.invalidateSize(); });
+        window.addEventListener('resize', () => {
+            // When crossing the mobile breakpoint, drop any open drawer state.
+            if (!isMobile()) closeMobileDrawers();
+            updateTogglesState();
+            resizeAllCharts();
+            mapRef && mapRef.invalidateSize();
+        });
     }
 
     function refreshAll() {
@@ -369,14 +412,37 @@
         if (!entry) return;
         const distP = fetch(`data/${entry.file}`).then((r) => r.json());
         const stateP = entry.state_file ? fetch(`data/${entry.state_file}`).then((r) => r.json()) : Promise.resolve(null);
-        Promise.all([distP, stateP]).then(([d, s]) => {
+        const obsP = loadObserved(state.crop);
+        Promise.all([distP, stateP, obsP]).then(([d, s, obs]) => {
             state.district = d;
             state.stateData = s;
+            state.observed = obs;
             populateStateFilter();
             updateOverlayMeta();
             updateKpis();
             refreshAll();
         });
+    }
+
+    function loadObserved(crop) {
+        if (state.observedCache[crop] !== undefined) {
+            return Promise.resolve(state.observedCache[crop]);
+        }
+        return fetch(`data/observed_${crop}.json`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+            .then((obs) => {
+                state.observedCache[crop] = obs;
+                return obs;
+            });
+    }
+
+    function observedFor(props) {
+        if (!state.observed || !props) return null;
+        if (props._level === 'state') {
+            return state.observed.states ? state.observed.states[props.NUTS1_ID] || null : null;
+        }
+        return state.observed.districts ? state.observed.districts[props.district_id] || null : null;
     }
 
     function populateStateFilter() {
@@ -524,6 +590,8 @@
                 renderRegionDetail(state.pinned);
                 renderLayer();
                 mapRef.fitBounds(e.target.getBounds(), { padding: [40, 40], maxZoom: 9 });
+                // On phones the Region detail lives in a hidden drawer; reveal it on click.
+                if (isMobile()) revealDetailDrawer();
             },
         });
     }
@@ -617,20 +685,41 @@
         const stateLine = isState ? `Federal state · ${props.NUTS1_ID}` : `${props.NUTS1_NAME} · ${props.district_id}`;
         const ensSpread = (props.pred_q90 != null && props.pred_q10 != null) ? props.pred_q90 - props.pred_q10 : null;
 
+        const obs = observedFor(props);
+        const obsItem = obs && Number.isFinite(obs.value)
+            ? {
+                label: `Observed (${obs.year})`,
+                value: `${fmtNum(obs.value)} t/ha`,
+                sub: isState
+                    ? `Mean of ${obs.n_districts || 0} districts`
+                    : 'Latest reported yield',
+            }
+            : { label: 'Observed', value: '—', sub: 'No reported yield' };
+
+        // Quick forecast-vs-observed comparison for the same district/state.
+        const diff = (obs && Number.isFinite(obs.value) && Number.isFinite(props.pred_q50))
+            ? props.pred_q50 - obs.value
+            : null;
+        if (diff != null) {
+            obsItem.sub = `${isState ? 'Mean · ' : ''}Δ forecast ${signed(diff)} t/ha`;
+        }
+
         const items = [
             { label: 'Predicted (q50)', value: `${fmtNum(props.pred_q50)} t/ha`, sub: `q10 ${fmtNum(props.pred_q10)} – q90 ${fmtNum(props.pred_q90)}` },
+            obsItem,
             { label: 'Anomaly', value: `${signed(props.anomaly)} t/ha`, sub: `${signed(props.anomaly_pct)} %`, cls: numCls(props.anomaly) },
             { label: 'Historical mean', value: `${fmtNum(props.hist_mean)} t/ha`, sub: `Ref: ${props.ref_period || '—'}` },
         ];
         if (!isState) {
             items.push({ label: 'Uncertainty', value: `±${fmtNum((props.ci_width || 0) / 2)} t/ha`, sub: `CI ${fmtNum(props.ci_width_pct)}%` });
-            items.push({ label: 'Ensemble', value: `${props.n_members || 50} members`, sub: `min ${fmtNum(props.ens_min)} · max ${fmtNum(props.ens_max)}` });
+            items.push({ label: 'Climate Ensemble', value: `${props.n_members || 50} members`, sub: `min ${fmtNum(props.ens_min)} · max ${fmtNum(props.ens_max)}` });
         }
 
         const min = props.ens_min ?? props.pred_q10;
         const max = props.ens_max ?? props.pred_q90;
         const lo = props.pred_q10, hi = props.pred_q90, med = props.pred_q50, hist = props.hist_mean;
-        const allVals = [min, max, lo, hi, med, hist].filter(Number.isFinite);
+        const obsVal = obs && Number.isFinite(obs.value) ? obs.value : null;
+        const allVals = [min, max, lo, hi, med, hist, obsVal].filter(Number.isFinite);
         const range = allVals.length ? [Math.min(...allVals), Math.max(...allVals)] : [0, 1];
         const span = Math.max(range[1] - range[0], 0.001);
         const pct = (v) => Math.max(0, Math.min(100, ((v - range[0]) / span) * 100));
@@ -645,6 +734,12 @@
                     <div class="ens-fill" style="left:${pct(lo)}%; right:${100 - pct(hi)}%"></div>
                     ${Number.isFinite(med) ? `<div class="ens-tick" style="left:calc(${pct(med)}% - 1px)" title="q50"></div>` : ''}
                     ${Number.isFinite(hist) ? `<div class="ens-tick hist" style="left:calc(${pct(hist)}% - 1px)" title="historical mean"></div>` : ''}
+                    ${obsVal != null ? `<div class="ens-tick obs" style="left:calc(${pct(obsVal)}% - 1px)" title="observed ${obs.year}"></div>` : ''}
+                </div>
+                <div class="ens-bar-legend">
+                    <span><span class="swatch swatch-med"></span>q50</span>
+                    <span><span class="swatch swatch-hist"></span>hist. mean</span>
+                    ${obsVal != null ? `<span><span class="swatch swatch-obs"></span>observed ${obs.year}</span>` : ''}
                 </div>
             </div>` : '';
 
@@ -861,6 +956,10 @@
                 mapRef.fitBounds(tmp.getBounds(), { padding: [40, 40], maxZoom: 10 });
                 host.hidden = true;
                 document.getElementById('search-input').value = '';
+                if (isMobile()) {
+                    closeMobileDrawers();
+                    revealDetailDrawer();
+                }
             });
             host.appendChild(li);
         });
