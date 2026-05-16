@@ -108,6 +108,20 @@ h1, h2, h3 { margin: 0; }
     color: #fff;
     display: grid; place-items: center;
     box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+.brand-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+.brand-mark.has-logo {
+    background: transparent;
+    box-shadow: none;
+}
+.brand-mark.has-logo .brand-logo-fallback {
+    display: none;
 }
 .brand-text { display: flex; flex-direction: column; min-width: 0; }
 .brand-text h1 { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
@@ -579,23 +593,155 @@ body.is-resizing iframe, body.is-resizing canvas { pointer-events: none; }
 }
 .leaflet-popup-tip { background: var(--overlay-bg) !important; }
 
-/* ----- Responsive ----- */
+/* ----- Drawer backdrop (mobile) ----- */
+.drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 90;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+}
+body.has-drawer .drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ----- Tablet / compact desktop ----- */
 @media (max-width: 1280px) {
     :root { --col-left-w: 290px; --col-right-w: 360px; }
     .brand-sub { display: none; }
 }
-@media (max-width: 980px) {
-    .workspace {
-        grid-template-columns: 1fr !important;
-        grid-template-rows: auto auto 1fr auto auto;
-        overflow-y: auto;
+
+/* ----- Mobile drawer mode ----- */
+@media (max-width: 860px) {
+    :root { --topbar-h: 56px; }
+
+    /* Workspace becomes a single map cell; sidebars overlay as drawers */
+    .workspace,
+    .workspace.no-left,
+    .workspace.no-right,
+    .workspace.no-left.no-right {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr;
     }
     .resize-handle { display: none; }
-    .col-left, .col-right { max-height: none; border-right: 0; border-left: 0; border-bottom: 1px solid var(--border); }
-    .col-map { height: 60vh; min-height: 400px; }
-}
-@media (max-width: 540px) {
+
+    .col-left, .col-right {
+        position: fixed;
+        top: var(--topbar-h);
+        bottom: 0;
+        width: min(88vw, 380px);
+        z-index: 100;
+        transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+        box-shadow: var(--shadow-lg);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    .col-left {
+        left: 0;
+        transform: translateX(-105%);
+        border-right: 1px solid var(--border);
+    }
+    .col-right {
+        right: 0;
+        transform: translateX(105%);
+        border-left: 1px solid var(--border);
+    }
+    .col-left.is-open, .col-right.is-open {
+        transform: translateX(0);
+    }
+    /* Desktop hide classes do not apply in drawer mode */
+    .workspace.no-left .col-left,
+    .workspace.no-right .col-right,
+    .workspace.no-left .resize-handle[data-target="left"],
+    .workspace.no-right .resize-handle[data-target="right"] {
+        display: block;
+    }
+
+    /* Topbar shrink */
+    .topbar { padding: 0 0.6rem; gap: 0.4rem; }
+    .topbar-actions { gap: 0.35rem; }
+    .brand { gap: 0.5rem; }
+    .brand-mark { width: 32px; height: 32px; }
     .brand-text h1 { font-size: 0.9rem; }
-    .seg-btn { font-size: 0.72rem; padding: 0.35rem 0.7rem; }
+    .seg-btn { padding: 0.32rem 0.65rem; font-size: 0.72rem; }
+    .icon-btn { width: 34px; height: 34px; }
+
+    /* Map overlays: smaller, repositioned so nothing overlaps */
+    .map-overlay-tl { top: 8px; left: 8px; right: 56px; }
+    .overlay-meta { padding: 0.3rem 0.4rem; gap: 0.3rem; flex-wrap: wrap; }
+    .overlay-tag { font-size: 0.66rem; padding: 0.15rem 0.45rem; }
+    .map-btn { top: 8px; right: 8px; width: 32px; height: 32px; }
+    .map-overlay-br { bottom: 16px; right: 8px; left: 8px; }
+    .legend {
+        min-width: 0;
+        max-width: none;
+        padding: 0.5rem 0.65rem 0.4rem;
+        font-size: 0.7rem;
+    }
+    .legend-title { font-size: 0.6rem; margin-bottom: 0.35rem; }
+    .legend-gradient { height: 10px; margin-bottom: 0.35rem; }
+    .legend-ticks { height: 22px; }
+    .legend-tick { font-size: 0.62rem; }
+
+    /* Zoom controls sit above bottom legend; shift up a bit */
+    .leaflet-bottom.leaflet-left { bottom: 86px; }
+
+    /* Left column padding shrink */
+    .col-left { padding: 0.75rem; }
+
+    /* Right column cards more vertical breathing room */
+    .col-right { padding: 0.6rem 0.6rem 1rem; }
+    .card-head { padding: 0.55rem 0.6rem; }
+    .card-body { padding: 0.6rem 0.7rem 0.75rem; }
+    .chart-host { height: 200px; }
+    .chart-host.tall { height: 240px; }
+
+    /* Region grid: one column on phones */
+    .region-grid { grid-template-columns: 1fr 1fr; }
+    .region-item { padding: 0.45rem 0.55rem; }
+    .region-item .value { font-size: 0.92rem; }
+
+    /* Close drag-handle affordance, since DnD via touch is unreliable */
+    .drag-grip { display: none; }
+    .card-head { cursor: pointer; }
+}
+
+/* ----- Very small phones ----- */
+@media (max-width: 480px) {
+    .brand-text h1 { font-size: 0.84rem; max-width: 36vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .seg { padding: 2px; }
+    .seg-btn { padding: 0.3rem 0.55rem; font-size: 0.68rem; }
     .icon-btn { width: 32px; height: 32px; }
+    /* Hide the basemap switcher to save space; theme + drawer toggles are higher priority */
+    #basemap-toggle { display: none; }
+    .region-grid { grid-template-columns: 1fr; }
+    .col-left, .col-right { width: 100vw; max-width: 100vw; }
+    .map-overlay-tl { right: 50px; }
+}
+
+/* ----- Touch input ergonomics ----- */
+@media (hover: none) and (pointer: coarse) {
+    .icon-btn, .seg-btn, .card-collapse {
+        min-height: 36px;
+    }
+    /* Hover-only styles look "stuck" on touch — neutralize */
+    .seg-btn:hover { color: var(--text-muted); background: transparent; }
+    .seg-btn.is-active { color: var(--text); }
+    .icon-btn:hover { color: var(--text-muted); border-color: var(--border); background: var(--bg-elev); }
+    .icon-btn.is-active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+}
+
+/* ----- Landscape phones: keep map dominant ----- */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+    :root { --topbar-h: 48px; }
+    .brand-text h1 { font-size: 0.8rem; }
+    .icon-btn { width: 30px; height: 30px; }
+    .map-overlay-tl { top: 6px; left: 6px; }
+    .map-overlay-br { bottom: 8px; }
 }

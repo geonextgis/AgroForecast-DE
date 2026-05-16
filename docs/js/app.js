@@ -253,8 +253,10 @@
     let mapRef, baseLayer, geoLayer;
 
     function initMap() {
-        mapRef = L.map('map', { zoomControl: true, attributionControl: true, preferCanvas: true })
+        mapRef = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true })
             .setView([51.2, 10.45], 6);
+        // Move zoom controls to bottom-left so they don't overlap the top-left info bar
+        L.control.zoom({ position: 'bottomleft' }).addTo(mapRef);
         applyBasemap();
         return mapRef;
     }
@@ -751,12 +753,15 @@
         const c = chartCommonOptions();
         const ctx = document.getElementById('chart-topbottom');
         if (!ctx) return;
-        const feats = activeFeatures().slice();
+        // Drop features whose metric value is missing / non-finite so they don't pollute the ranking
+        const feats = activeFeatures().filter((f) => Number.isFinite(f.properties[state.metric]));
         if (!feats.length) { if (state.charts.tb) { state.charts.tb.destroy(); delete state.charts.tb; } return; }
         const labelKey = state.level === 'state' ? 'NUTS1_NAME' : 'NUTS3_NAME';
-        feats.sort((a, b) => (b.properties[state.metric] ?? -Infinity) - (a.properties[state.metric] ?? -Infinity));
-        const top = feats.slice(0, 10);
-        const bottom = feats.slice(-10).reverse();
+        feats.sort((a, b) => b.properties[state.metric] - a.properties[state.metric]);
+        // Avoid duplicating regions when the dataset has fewer than 20 valid entries
+        const n = feats.length;
+        const top = feats.slice(0, Math.min(10, Math.ceil(n / 2)));
+        const bottom = feats.slice(-Math.min(10, Math.floor(n / 2))).reverse();
         const items = [...top, ...bottom];
         const labels = items.map((f) => f.properties[labelKey]);
         const data = items.map((f) => f.properties[state.metric]);
@@ -788,7 +793,10 @@
         const c = chartCommonOptions();
         const ctx = document.getElementById('chart-states');
         if (!ctx || !state.stateData) return;
-        const feats = state.stateData.features.slice().sort((a, b) => b.properties.pred_q50 - a.properties.pred_q50);
+        const feats = state.stateData.features
+            .filter((f) => Number.isFinite(f.properties.pred_q50))
+            .sort((a, b) => b.properties.pred_q50 - a.properties.pred_q50);
+        if (!feats.length) { if (state.charts.states) { state.charts.states.destroy(); delete state.charts.states; } return; }
         const labels = feats.map((f) => f.properties.NUTS1_NAME);
         const med = feats.map((f) => f.properties.pred_q50);
         const lo = feats.map((f) => f.properties.pred_q10);
