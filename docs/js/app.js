@@ -54,7 +54,7 @@
 
     const state = {
         index: [],
-        crop: null,
+        crop: 'winter_wheat',
         date: null,
         metric: 'pred_q50',
         level: 'district',
