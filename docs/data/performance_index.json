@@ -1,0 +1,14 @@
+[
+  {
+    "crop": "silage_maize",
+    "harvest_month": "Sep",
+    "file": "performance_silage_maize.json",
+    "n_years": 24
+  },
+  {
+    "crop": "winter_wheat",
+    "harvest_month": "Jul",
+    "file": "performance_winter_wheat.json",
+    "n_years": 24
+  }
+]

@@ -71,6 +71,16 @@
         scale: null,
         observed: null,       // observed-yield lookup for the active crop
         observedCache: {},    // crop -> observed JSON
+        performance: null,    // performance JSON for the active crop
+        performanceCache: {}, // crop -> performance JSON (or null if missing)
+    };
+
+    // Colors used across the performance chart for the three split categories.
+    // Tuned to read well on both light and dark backgrounds.
+    const SPLIT_COLORS = {
+        train:      { fill: 'rgba(99, 102, 241, 0.18)',  stroke: '#6366f1', label: 'Training' },
+        validation: { fill: 'rgba(245, 158, 11, 0.20)',  stroke: '#f59e0b', label: 'Validation' },
+        test:       { fill: 'rgba(220, 38, 38, 0.20)',   stroke: '#dc2626', label: 'Test' },
     };
 
     /* ---------- Boot ---------- */
@@ -413,10 +423,12 @@
         const distP = fetch(`data/${entry.file}`).then((r) => r.json());
         const stateP = entry.state_file ? fetch(`data/${entry.state_file}`).then((r) => r.json()) : Promise.resolve(null);
         const obsP = loadObserved(state.crop);
-        Promise.all([distP, stateP, obsP]).then(([d, s, obs]) => {
+        const perfP = loadPerformance(state.crop);
+        Promise.all([distP, stateP, obsP, perfP]).then(([d, s, obs, perf]) => {
             state.district = d;
             state.stateData = s;
             state.observed = obs;
+            state.performance = perf;
             populateStateFilter();
             updateOverlayMeta();
             updateKpis();
@@ -434,6 +446,19 @@
             .then((obs) => {
                 state.observedCache[crop] = obs;
                 return obs;
+            });
+    }
+
+    function loadPerformance(crop) {
+        if (state.performanceCache[crop] !== undefined) {
+            return Promise.resolve(state.performanceCache[crop]);
+        }
+        return fetch(`data/performance_${crop}.json`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+            .then((p) => {
+                state.performanceCache[crop] = p;
+                return p;
             });
     }
 
@@ -782,6 +807,7 @@
     function renderCharts() {
         renderDistribution();
         renderTopBottom();
+        renderPerformance();
         renderStatesChart();
     }
     function rerenderCharts() {
@@ -879,6 +905,193 @@
                 scales: {
                     x: { grid: { color: c.border }, title: { display: true, text: METRIC_UNITS[state.metric] || '', color: c.muted } },
                     y: { ticks: { autoSkip: false, font: { size: 10 } }, grid: { display: false } },
+                },
+            },
+        });
+    }
+
+    function renderPerformance() {
+        const c = chartCommonOptions();
+        const ctx = document.getElementById('chart-performance');
+        const legendHost = document.getElementById('performance-split-legend');
+        const overallHost = document.getElementById('performance-overall');
+        if (!ctx) return;
+
+        const perf = state.performance;
+        if (!perf || !Array.isArray(perf.years) || !perf.years.length) {
+            if (state.charts.perf) { state.charts.perf.destroy(); delete state.charts.perf; }
+            if (legendHost) legendHost.innerHTML = '';
+            if (overallHost) {
+                overallHost.innerHTML = `<p class="placeholder">
+                    Performance data not available for ${prettyCrop(state.crop)} —
+                    no train/validation/test outputs were exported for this crop.
+                </p>`;
+            }
+            return;
+        }
+
+        const years = perf.years.map((y) => String(y.year));
+        const observed = perf.years.map((y) => y.observed);
+        const predicted = perf.years.map((y) => y.predicted);
+
+        // Per-year background colors (light tint of the split color) — used by
+        // both the observed and predicted boxes so the user instantly sees
+        // which split a year belongs to.
+        const obsFill = perf.years.map((y) => SPLIT_COLORS[y.split].fill);
+        const obsStroke = perf.years.map((y) => SPLIT_COLORS[y.split].stroke);
+        // Predicted boxes use a slightly darker variant so they're
+        // distinguishable from observed without losing the split tint.
+        const predFill = perf.years.map((y) => {
+            // Convert "rgba(r, g, b, a)" -> bump alpha by ~0.18
+            const m = SPLIT_COLORS[y.split].fill.match(/rgba?\(([^)]+)\)/);
+            if (!m) return SPLIT_COLORS[y.split].fill;
+            const parts = m[1].split(',').map((s) => s.trim());
+            const a = parts.length === 4 ? Math.min(1, parseFloat(parts[3]) + 0.18) : 0.4;
+            return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${a})`;
+        });
+
+        // Split legend (chips above the chart)
+        if (legendHost) {
+            const presentSplits = [...new Set(perf.years.map((y) => y.split))];
+            legendHost.innerHTML = presentSplits.map((s) => {
+                const meta = SPLIT_COLORS[s];
+                const m = perf.splits[s] || {};
+                const r2 = m.r2 != null ? m.r2.toFixed(3) : '—';
+                return `<span class="split-chip" title="Overall ${meta.label} R²: ${r2}">
+                    <span class="split-swatch" style="background:${meta.stroke}"></span>
+                    ${meta.label}
+                    <span class="split-chip-sub">${m.years ? m.years.length : 0}y · n=${m.n ?? '–'}</span>
+                </span>`;
+            }).join('');
+        }
+
+        // Overall metrics summary table
+        if (overallHost) {
+            const fmt = (v, d = 3) => (v == null ? '—' : Number(v).toFixed(d));
+            overallHost.innerHTML = `
+                <table class="perf-table" aria-label="Overall metrics per split">
+                    <thead>
+                        <tr><th>Split</th><th>n</th><th>R²</th><th>RMSE</th><th>MAPE</th></tr>
+                    </thead>
+                    <tbody>
+                        ${['train','validation','test'].filter((s) => perf.splits[s]).map((s) => {
+                            const m = perf.splits[s];
+                            return `<tr>
+                                <td>
+                                    <span class="split-swatch" style="background:${SPLIT_COLORS[s].stroke}"></span>
+                                    ${SPLIT_COLORS[s].label}
+                                </td>
+                                <td>${m.n}</td>
+                                <td>${fmt(m.r2, 3)}</td>
+                                <td>${fmt(m.rmse, 2)}</td>
+                                <td>${m.mape != null ? fmt(m.mape, 2) + '%' : '—'}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        if (state.charts.perf) state.charts.perf.destroy();
+        // chartjs-chart-boxplot registers the "boxplot" type globally.
+        state.charts.perf = new Chart(ctx, {
+            type: 'boxplot',
+            data: {
+                labels: years,
+                datasets: [
+                    {
+                        label: 'Observed',
+                        data: observed,
+                        backgroundColor: obsFill,
+                        borderColor: obsStroke,
+                        borderWidth: 1.2,
+                        outlierBackgroundColor: obsStroke,
+                        outlierBorderColor: obsStroke,
+                        outlierRadius: 1.8,
+                        itemRadius: 0,
+                        medianColor: c.text,
+                    },
+                    {
+                        label: 'Predicted',
+                        data: predicted,
+                        backgroundColor: predFill,
+                        borderColor: obsStroke,
+                        borderWidth: 1.2,
+                        borderDash: [3, 3],
+                        outlierBackgroundColor: obsStroke,
+                        outlierBorderColor: obsStroke,
+                        outlierRadius: 1.8,
+                        itemRadius: 0,
+                        medianColor: c.text,
+                    },
+                ],
+            },
+            options: {
+                maintainAspectRatio: false,
+                responsive: true,
+                animation: { duration: 250 },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 12,
+                            color: c.muted,
+                            font: { size: 10 },
+                            // Override the swatch colors (datasets carry per-bar
+                            // colors, which makes the legend confusing).
+                            generateLabels: (chart) => chart.data.datasets.map((ds, i) => ({
+                                text: ds.label,
+                                fillStyle: i === 0 ? c.muted : 'transparent',
+                                strokeStyle: c.muted,
+                                lineWidth: 1.2,
+                                lineDash: i === 1 ? [3, 3] : [],
+                                hidden: !chart.isDatasetVisible(i),
+                                datasetIndex: i,
+                            })),
+                        },
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => {
+                                if (!items.length) return '';
+                                const idx = items[0].dataIndex;
+                                const y = perf.years[idx];
+                                if (!y) return items[0].label;
+                                return `${y.year} · ${SPLIT_COLORS[y.split].label} (n=${y.n})`;
+                            },
+                            label: (item) => {
+                                const v = item.parsed;
+                                const fmt = (x) => (x == null ? '—' : x.toFixed(2));
+                                return ` ${item.dataset.label}: q1 ${fmt(v.q1)} · med ${fmt(v.median)} · q3 ${fmt(v.q3)} t/ha`;
+                            },
+                            afterBody: (items) => {
+                                if (!items.length) return '';
+                                const idx = items[0].dataIndex;
+                                const m = perf.years[idx] && perf.years[idx].metrics;
+                                if (!m) return '';
+                                const fmt = (x, d = 3) => (x == null ? '—' : Number(x).toFixed(d));
+                                return [
+                                    '',
+                                    `R² ${fmt(m.r2, 3)}`,
+                                    `RMSE ${fmt(m.rmse, 2)} t/ha`,
+                                    `MAPE ${m.mape != null ? fmt(m.mape, 2) + ' %' : '—'}`,
+                                ];
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: { font: { size: 9 }, maxRotation: 60, minRotation: 40, color: c.muted },
+                        grid: { display: false },
+                        title: { display: true, text: 'Year', color: c.muted, font: { size: 10 } },
+                    },
+                    y: {
+                        beginAtZero: false,
+                        title: { display: true, text: 'Yield (t/ha)', color: c.muted },
+                        grid: { color: c.border },
+                    },
                 },
             },
         });

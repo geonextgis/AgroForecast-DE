@@ -612,6 +612,79 @@ body.is-resizing iframe, body.is-resizing canvas { pointer-events: none; }
 .ens-bar-legend .swatch-hist { background: var(--text-muted); }
 .ens-bar-legend .swatch-obs { background: var(--accent); }
 
+/* ----- Performance / box-plot card ----- */
+.split-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.5rem;
+    margin-bottom: 0.55rem;
+}
+.split-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+}
+.split-chip-sub {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+.split-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+.perf-overall {
+    margin-top: 0.55rem;
+}
+.perf-overall .placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    margin: 0.4rem 0 0;
+    font-size: 0.78rem;
+}
+.perf-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+}
+.perf-table th,
+.perf-table td {
+    text-align: right;
+    padding: 0.28rem 0.4rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+}
+.perf-table th:first-child,
+.perf-table td:first-child {
+    text-align: left;
+}
+.perf-table th {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+.perf-table td:first-child {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.perf-table tbody tr:last-child td { border-bottom: 0; }
+
 /* ----- Leaflet popup themed ----- */
 .leaflet-popup-content-wrapper {
     background: var(--overlay-bg) !important;

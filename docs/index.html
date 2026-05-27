@@ -33,6 +33,7 @@
     />
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4.4.4/build/index.umd.min.js"></script>
 
     <link rel="stylesheet" href="css/style.css" />
   </head>
@@ -417,6 +418,53 @@
                 </div>
                 <p class="chart-caption">
                   Top 10 and bottom 10 regions for the selected metric.
+                </p>
+              </div>
+            </article>
+
+            <article class="card" data-card="performance" draggable="true">
+              <header class="card-head">
+                <span class="drag-grip" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="currentColor"
+                  >
+                    <circle cx="9" cy="6" r="1.4" />
+                    <circle cx="15" cy="6" r="1.4" />
+                    <circle cx="9" cy="12" r="1.4" />
+                    <circle cx="15" cy="12" r="1.4" />
+                    <circle cx="9" cy="18" r="1.4" />
+                    <circle cx="15" cy="18" r="1.4" />
+                  </svg>
+                </span>
+                <h3>Observed vs. predicted by year</h3>
+                <button class="card-collapse" aria-label="Collapse card">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              </header>
+              <div class="card-body">
+                <div class="split-legend" id="performance-split-legend"></div>
+                <div class="chart-host tall">
+                  <canvas id="chart-performance"></canvas>
+                </div>
+                <div class="perf-overall" id="performance-overall"></div>
+                <p class="chart-caption">
+                  Box plots compare observed and predicted yield distributions
+                  across districts for each year. Hover a year for R², RMSE
+                  and MAPE.
                 </p>
               </div>
             </article>
